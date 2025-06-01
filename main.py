@@ -1,54 +1,44 @@
-import os
-import telebot
 import firebase_admin
 from firebase_admin import credentials, db
-from flask import Flask, request
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
-TOKEN = os.environ.get("BOT_TOKEN")
-bot = telebot.TeleBot(TOKEN)
-app = Flask(__name__)
+# Firebase key file ka naam yahaan likhna hai (jo aapne upload kiya)
+cred = credentials.Certificate("tele-73749-firebase-adminsdk-fbsvc-74bb9599a7.json")
 
-# Firebase initialize
-cred = credentials.Certificate("firebase_key.json")  # Your downloaded key
+# Firebase Realtime Database URL yahaan daalna hai
 firebase_admin.initialize_app(cred, {
-    'databaseURL': os.environ.get("FIREBASE_DB_URL")  # e.g. https://your-app.firebaseio.com
+    'databaseURL': 'https://tele-73749-default-rtdb.firebaseio.com//'
 })
 
-# /start command
-@bot.message_handler(commands=['start'])
-def send_hello(message):
-    bot.send_message(message.chat.id, "Hello World 👋")
+# Telegram Bot Token yahaan daalna hai
+BOT_TOKEN = "7074759528:AAEP1WBtIp7-IQM6T72owwRSVmVVYKlaSYQ"
 
-# /users command to show firebase user data
-@bot.message_handler(commands=['users'])
-def show_users(message):
-    ref = db.reference('users')
+# /start command
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Hello World! 👋")
+
+# /users command
+async def users(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    ref = db.reference("/users")  # Firebase ke users path ka reference
     data = ref.get()
 
-    if not data:
-        bot.send_message(message.chat.id, "Koi user data nahi mila.")
-        return
+    if data:
+        msg = "📋 Firebase Users:\n\n"
+        for key, user in data.items():
+            msg += f"🧑 {user.get('name', 'No Name')}\n"
+        await update.message.reply_text(msg)
+    else:
+        await update.message.reply_text("❌ Koi user nahi mila.")
 
-    text = "📋 User List:\n"
-    for key, user in data.items():
-        name = user.get("name", "No Name")
-        email = user.get("email", "No Email")
-        text += f"\n👤 {name}\n📧 {email}\n"
+# Bot run karne ka function
+def run_bot():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
-    bot.send_message(message.chat.id, text)
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("users", users))
 
-# Webhook route
-@app.route(f"/{TOKEN}", methods=["POST"])
-def webhook():
-    update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
-    bot.process_new_updates([update])
-    return "ok", 200
-
-@app.route("/")
-def index():
-    return "Bot is running!", 200
+    app.run_polling()
 
 if __name__ == "__main__":
-    bot.remove_webhook()
-    bot.set_webhook(url=os.environ.get("RENDER_EXTERNAL_URL") + "/" + TOKEN)
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    run_bot()
